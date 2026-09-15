@@ -1,0 +1,17 @@
+# Exported from https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: kahoot-mock
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm run render:build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLOUD_HOSTED
+        value: 'true'
+      - key: JWT_SECRET
+        generateValue: true

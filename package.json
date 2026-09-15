@@ -1,0 +1,41 @@
+{
+  "name": "kahoot",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm run dev --prefix server\" \"vite\"",
+    "dev:web": "vite",
+    "dev:server": "npm run dev --prefix server",
+    "dev:public": "npm run build && concurrently -n server,web,tunnel -c magenta,cyan,green \"npm run dev --prefix server\" \"vite\" \"node scripts/tunnel.mjs\"",
+    "tunnel": "node scripts/tunnel.mjs",
+    "tunnel:build": "npm run build && node scripts/tunnel.mjs",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "start": "npm run start --prefix server",
+    "start:server": "npm run start --prefix server",
+    "render:build": "npm install && npm install --prefix server && npm run build"
+  },
+  "dependencies": {
+    "concurrently": "^10.0.5",
+    "localtunnel": "^2.0.2",
+    "lucide-react": "^1.42.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "oxlint": "^1.79.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2"
+  }
+}
