@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware, login, register, type AuthUser } from './auth.js'
 import { db } from './db.js'
-import { normalizeQuestion, validateQuestions } from './questionUtils.js'
+import { normalizeQuizPayload, validateQuestions } from './questionUtils.js'
 
 type AuthedRequest = Parameters<typeof authMiddleware>[0] & { user?: AuthUser }
 
@@ -53,13 +53,10 @@ quizRouter.get('/:id', (req, res) => {
 quizRouter.post('/', (req, res) => {
   try {
     const user = (req as AuthedRequest).user!
-    const title = String(req.body?.title ?? '').trim()
+    const { title, questions, languages, defaultLanguage } = normalizeQuizPayload(req.body ?? {})
     if (!title) throw new Error('请填写测验标题')
-    const questions = (req.body?.questions ?? []).map((q: unknown) =>
-      normalizeQuestion(q as Parameters<typeof normalizeQuestion>[0]),
-    )
-    validateQuestions(questions)
-    const quiz = db.createQuiz(user.id, title, questions)
+    validateQuestions(questions, languages)
+    const quiz = db.createQuiz(user.id, title, questions, languages, defaultLanguage)
     res.status(201).json(quiz)
   } catch (e) {
     res.status(400).json({ error: e instanceof Error ? e.message : '保存失败' })
@@ -69,13 +66,10 @@ quizRouter.post('/', (req, res) => {
 quizRouter.put('/:id', (req, res) => {
   try {
     const user = (req as AuthedRequest).user!
-    const title = String(req.body?.title ?? '').trim()
+    const { title, questions, languages, defaultLanguage } = normalizeQuizPayload(req.body ?? {})
     if (!title) throw new Error('请填写测验标题')
-    const questions = (req.body?.questions ?? []).map((q: unknown) =>
-      normalizeQuestion(q as Parameters<typeof normalizeQuestion>[0]),
-    )
-    validateQuestions(questions)
-    const quiz = db.updateQuiz(req.params.id, user.id, title, questions)
+    validateQuestions(questions, languages)
+    const quiz = db.updateQuiz(req.params.id, user.id, title, questions, languages, defaultLanguage)
     if (!quiz) {
       res.status(404).json({ error: '测验不存在' })
       return

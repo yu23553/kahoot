@@ -1,24 +1,34 @@
 export type QuestionType = 'choice' | 'truefalse' | 'fill' | 'order'
 
+export type QuizLanguage = {
+  code: string
+  label: string
+}
+
+/** 某一语言下的题干与选项/答案文案 */
+export type QuestionLocale = {
+  text: string
+  options?: string[]
+  acceptAnswers?: string[]
+  items?: string[]
+}
+
 export type Question = {
   id: string
   type: QuestionType
-  text: string
   timeLimit: number
-  /** 选择题 4 项 / 判断题 2 项 */
-  options?: string[]
-  /** 选择/判断的正确答案下标 */
+  /** 选择/判断正确答案下标（各语言共用） */
   correctIndex?: number
-  /** 填空题可接受答案（不区分大小写，支持模糊） */
-  acceptAnswers?: string[]
-  /** 排序题：按正确顺序排列的条目 */
-  items?: string[]
+  /** 按语言 code 存储文案；至少包含测验的每一种语言 */
+  locales: Record<string, QuestionLocale>
 }
 
 export type Quiz = {
   id: string
   title: string
   questions: Question[]
+  languages: QuizLanguage[]
+  defaultLanguage: string
   ownerId: string
   createdAt: number
   updatedAt: number
@@ -37,6 +47,8 @@ export type Player = {
   score: number
   avatarColor: string
   socketId: string
+  /** 答题所用语言 code */
+  language: string
 }
 
 export type RoomPhase =
@@ -68,6 +80,7 @@ export type RoundStats = {
   correctIndex?: number
   correctAnswers?: string[]
   correctOrder?: string[]
+  options?: string[]
   answerCounts: number[]
   fillAnswers: FillAnswerStat[]
   correctCount: number
@@ -100,8 +113,8 @@ export type Room = {
   answers: Map<string, StoredAnswer>
   lastRoundScores: Map<string, number>
   lastRoundStats: RoundStats | null
-  /** 排序题本轮发给玩家的打乱顺序 */
-  shuffledItems: string[] | null
+  /** 排序题：打乱后的下标序列（各语言共用下标） */
+  shuffledIndices: number[] | null
   createdAt: number
   lastActiveAt: number
   timer: NodeJS.Timeout | null
@@ -113,6 +126,7 @@ export type PublicPlayer = {
   nickname: string
   score: number
   avatarColor: string
+  language?: string
 }
 
 export type PublicQuestion = {
@@ -122,6 +136,7 @@ export type PublicQuestion = {
   text: string
   timeLimit: number
   endsAt: number
+  language: string
   options?: string[]
   items?: string[]
 }
@@ -134,9 +149,13 @@ export type AnswerPayload = {
 
 export const MAX_ROOM_PLAYERS = 80
 export const INTRO_DURATION_MS = 5000
-/** 大厅空闲（无玩家或无主持活动）超时 */
 export const LOBBY_IDLE_MS = 45 * 60 * 1000
-/** 结束后房间保留时间 */
 export const FINISHED_IDLE_MS = 20 * 60 * 1000
-/** 游戏中无任何活动超时（极端断线） */
 export const IN_GAME_IDLE_MS = 3 * 60 * 60 * 1000
+
+export const PRESET_LANGUAGES: QuizLanguage[] = [
+  { code: 'zh', label: '中文' },
+  { code: 'th', label: 'ไทย' },
+  { code: 'id', label: 'Indonesia' },
+  { code: 'en', label: 'English' },
+]

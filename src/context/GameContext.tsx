@@ -17,7 +17,6 @@ import type {
   Player,
   PlayerRoundResult,
   PublicQuestion,
-  Question,
   QuestionType,
   RoundStatsView,
 } from '../types'
@@ -48,7 +47,17 @@ type GameContextValue = {
   timeLeft: number
   introProgress: number
   introType: QuestionType | null
-  currentQuestion: Question | null
+  currentQuestion: {
+    id: string
+    type: QuestionType
+    text: string
+    timeLimit: number
+    options?: string[]
+    items?: string[]
+    correctIndex?: number
+    acceptAnswers?: string[]
+    language?: string
+  } | null
   myAnswer: MyAnswer
   correctIndex: number | null
   correctAnswers: string[] | null
@@ -64,7 +73,16 @@ type GameContextValue = {
   error: string
   clearError: () => void
   createRoom: (quizId: string) => Promise<void>
-  joinGame: (pin: string, nickname: string) => Promise<void>
+  myLanguage: string | null
+  roomLanguages: { code: string; label: string }[]
+  joinGame: (pin: string, nickname: string, language?: string) => Promise<void>
+  previewRoom: (
+    pin: string,
+  ) => Promise<{
+    title: string
+    languages: { code: string; label: string }[]
+    defaultLanguage: string
+  }>
   startGame: () => Promise<void>
   nextQuestion: () => Promise<void>
   submitAnswer: (payload: AnswerPayload) => Promise<void>
@@ -145,6 +163,7 @@ function parseRoundStats(payload: Record<string, unknown>): RoundStatsView {
         ? (payload.playerResults as Record<string, PlayerRoundResult>)
         : {},
     hasNext: Boolean(payload.hasNext),
+    options: Array.isArray(payload.options) ? (payload.options as string[]) : undefined,
   }
 }
 
@@ -178,6 +197,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [error, setError] = useState('')
+  const [myLanguage, setMyLanguage] = useState<string | null>(null)
+  const [roomLanguages, setRoomLanguages] = useState<{ code: string; label: string }[]>([])
 
   const roleRef = useRef(role)
   const pinRef = useRef(pin)
@@ -232,6 +253,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
     if (typeof snapshot.answeredCount === 'number') setAnsweredCount(snapshot.answeredCount)
     if (typeof snapshot.correctCount === 'number') setCorrectCount(snapshot.correctCount)
+    if (Array.isArray(snapshot.languages)) {
+      setRoomLanguages(snapshot.languages as { code: string; label: string }[])
+    }
+    if (typeof snapshot.myLanguage === 'string') setMyLanguage(snapshot.myLanguage)
 
     if (snapshot.phase === 'stats') {
       setRoundStats(parseRoundStats(snapshot))
@@ -491,17 +516,34 @@ export function GameProvider({ children }: { children: ReactNode }) {
     [persist, user],
   )
 
+  const previewRoom = useCallback(async (pinInput: string) => {
+    const res = await emitAck<{
+      ok: boolean
+      message?: string
+      title?: string
+      languages?: { code: string; label: string }[]
+      defaultLanguage?: string
+    }>('room:preview', { pin: pinInput })
+    if (!res.ok) throw new Error(res.message || '房间不存在')
+    return {
+      title: res.title || '',
+      languages: res.languages?.length ? res.languages : [{ code: 'zh', label: '中文' }],
+      defaultLanguage: res.defaultLanguage || res.languages?.[0]?.code || 'zh',
+    }
+  }, [])
+
   const joinGame = useCallback(
-    async (pinInput: string, nickname: string) => {
+    async (pinInput: string, nickname: string, language?: string) => {
       const res = await emitAck<{
         ok: boolean
         message?: string
-        player?: Player
+        player?: Player & { language?: string }
         snapshot?: Record<string, unknown>
-      }>('player:join', { pin: pinInput, nickname })
+      }>('player:join', { pin: pinInput, nickname, language })
       if (!res.ok || !res.player) throw new Error(res.message || '加入失败')
       setRole('player')
       setCurrentPlayerId(res.player.id)
+      if (res.player.language) setMyLanguage(res.player.language)
       setError('')
       persist('player', pinInput, res.player.id)
       if (res.snapshot) applySnapshot(res.snapshot)
@@ -572,20 +614,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setRoundStats(null)
     setAnsweredCount(0)
     setIntroType(null)
+    setMyLanguage(null)
+    setRoomLanguages([])
     setError('')
     saveSession(null)
   }, [pin, role, user])
 
-  const currentQuestion: Question | null = questionMeta
+  const currentQuestion = questionMeta
     ? {
         id: `q_${questionMeta.index}`,
         type: questionMeta.type || 'choice',
         text: questionMeta.text,
+        timeLimit: questionMeta.timeLimit,
         options: questionMeta.options,
         items: questionMeta.items,
         correctIndex: correctIndex ?? undefined,
         acceptAnswers: correctAnswers ?? undefined,
-        timeLimit: questionMeta.timeLimit,
+        language: questionMeta.language || myLanguage || undefined,
       }
     : null
 
@@ -620,9 +665,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     connected,
     reconnecting,
     error,
+    myLanguage,
+    roomLanguages,
     clearError: () => setError(''),
     createRoom,
     joinGame,
+    previewRoom,
     startGame,
     nextQuestion,
     submitAnswer,

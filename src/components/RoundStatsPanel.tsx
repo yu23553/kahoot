@@ -1,6 +1,6 @@
 import { ANSWER_COLORS } from '../data/mock'
+import { useUiLanguage } from '../context/UiLanguageContext'
 import type { Player, QuestionType, RoundStatsView } from '../types'
-import { QUESTION_TYPE_LABELS } from '../types'
 import { AnswerShape } from './ui'
 
 export function RoundStatsPanel({
@@ -18,6 +18,7 @@ export function RoundStatsPanel({
   onNext?: () => void
   options?: string[]
 }) {
+  const { t, questionTypeLabel } = useUiLanguage()
   const me = currentPlayerId ? stats.playerResults[currentPlayerId] : undefined
   const accuracyPct = Math.round(stats.accuracy * 100)
   const maxCount = Math.max(1, ...stats.answerCounts, ...stats.fillAnswers.map((f) => f.count))
@@ -26,16 +27,27 @@ export function RoundStatsPanel({
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
       <header className="text-center">
         <p className="text-sm font-bold text-white/60">
-          {QUESTION_TYPE_LABELS[stats.type]} · 第 {stats.questionIndex + 1} 题结果
+          {t('stats.resultOf', {
+            type: questionTypeLabel(stats.type),
+            n: stats.questionIndex + 1,
+          })}
         </p>
-        <h2 className="mt-1 font-display text-3xl font-black text-white sm:text-4xl">本题统计</h2>
+        <h2 className="mt-1 font-display text-3xl font-black text-white sm:text-4xl">
+          {t('stats.title')}
+        </h2>
         <p className="mt-2 text-sm text-white/70 line-clamp-2">{stats.questionText}</p>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard label="正确率" value={`${accuracyPct}%`} />
-        <StatCard label="答对人数" value={`${stats.correctCount}/${stats.totalPlayers}`} />
-        <StatCard label="已作答" value={`${stats.answeredCount}/${stats.totalPlayers}`} />
+        <StatCard label={t('stats.accuracy')} value={`${accuracyPct}%`} />
+        <StatCard
+          label={t('stats.correctCount')}
+          value={`${stats.correctCount}/${stats.totalPlayers}`}
+        />
+        <StatCard
+          label={t('stats.answered')}
+          value={`${stats.answeredCount}/${stats.totalPlayers}`}
+        />
       </div>
 
       {me && (
@@ -44,11 +56,13 @@ export function RoundStatsPanel({
             me.correct ? 'bg-answer-green text-white' : 'bg-answer-red text-white'
           }`}
         >
-          <div className="text-sm opacity-80">{me.correct ? '你答对了！' : '未完全答对'}</div>
+          <div className="text-sm opacity-80">
+            {me.correct ? t('stats.youCorrect') : t('stats.youWrong')}
+          </div>
           <div className="text-4xl">+{me.gained}</div>
           {typeof me.similarity === 'number' && (
             <div className="mt-1 text-sm opacity-80">
-              匹配度 {Math.round(me.similarity * 100)}%
+              {t('stats.similarity', { pct: Math.round(me.similarity * 100) })}
             </div>
           )}
         </div>
@@ -66,14 +80,14 @@ export function RoundStatsPanel({
 
       {stats.type === 'fill' && (
         <div className="rounded-2xl bg-white/10 p-4 text-white">
-          <p className="mb-2 text-sm font-bold text-white/70">答案分布（模糊匹配）</p>
+          <p className="mb-2 text-sm font-bold text-white/70">{t('stats.fillDist')}</p>
           <p className="mb-3 text-sm">
-            标准答案：
+            {t('stats.standardAnswer')}
             <span className="font-black"> {(stats.correctAnswers ?? []).join(' / ') || '—'}</span>
           </p>
           <ul className="space-y-2">
             {stats.fillAnswers.length === 0 && (
-              <li className="text-white/50">本轮无人作答</li>
+              <li className="text-white/50">{t('stats.noAnswers')}</li>
             )}
             {stats.fillAnswers.map((row) => (
               <li key={row.text} className="flex items-center gap-3">
@@ -84,7 +98,9 @@ export function RoundStatsPanel({
                     style={{ width: `${(row.count / maxCount) * 100}%` }}
                   />
                 </div>
-                <span className="w-16 text-right text-sm font-black">{row.count}人</span>
+                <span className="w-16 text-right text-sm font-black">
+                  {t('stats.people', { n: row.count })}
+                </span>
               </li>
             ))}
           </ul>
@@ -93,7 +109,7 @@ export function RoundStatsPanel({
 
       {stats.type === 'order' && (
         <div className="rounded-2xl bg-white/10 p-4 text-white">
-          <p className="mb-2 text-sm font-bold text-white/70">正确顺序</p>
+          <p className="mb-2 text-sm font-bold text-white/70">{t('stats.correctOrder')}</p>
           <ol className="space-y-2">
             {(stats.correctOrder ?? []).map((item, i) => (
               <li
@@ -109,7 +125,7 @@ export function RoundStatsPanel({
       )}
 
       <div className="rounded-2xl bg-white/10 p-4">
-        <p className="mb-3 text-center text-sm font-bold text-white/70">本轮得分</p>
+        <p className="mb-3 text-center text-sm font-bold text-white/70">{t('stats.roundScores')}</p>
         <ul className="mx-auto max-w-md space-y-2">
           {[...players]
             .sort((a, b) => (stats.roundScores[b.id] ?? 0) - (stats.roundScores[a.id] ?? 0))
@@ -141,12 +157,12 @@ export function RoundStatsPanel({
           onClick={onNext}
           className="animate-pop-in mx-auto w-full max-w-md rounded-2xl bg-kahoot-magenta py-4 text-xl font-black text-white shadow-xl hover:brightness-110"
         >
-          {stats.hasNext ? '进入下一题' : '查看领奖台'}
+          {stats.hasNext ? t('stats.next') : t('stats.podium')}
         </button>
       )}
 
       {!isHost && (
-        <p className="text-center text-sm font-bold text-white/55">等待主持人进入下一题…</p>
+        <p className="text-center text-sm font-bold text-white/55">{t('stats.waitHost')}</p>
       )}
     </div>
   )
@@ -174,10 +190,11 @@ function DistributionBars({
   correctIndex: number | null
   maxCount: number
 }) {
+  const { t } = useUiLanguage()
   const n = type === 'truefalse' ? 2 : 4
   return (
     <div className="rounded-2xl bg-white/10 p-4 text-white">
-      <p className="mb-3 text-sm font-bold text-white/70">答案分布</p>
+      <p className="mb-3 text-sm font-bold text-white/70">{t('stats.answerDist')}</p>
       <div className="space-y-3">
         {Array.from({ length: n }, (_, i) => {
           const color =
@@ -191,7 +208,12 @@ function DistributionBars({
             <div key={i} className="flex items-center gap-3">
               {type === 'choice' && <AnswerShape index={i} className="h-8 w-8 shrink-0" />}
               <span className="w-24 truncate text-sm font-bold sm:w-40">
-                {labels[i] || (type === 'truefalse' ? (i === 0 ? '正确' : '错误') : `选项 ${i + 1}`)}
+                {labels[i] ||
+                  (type === 'truefalse'
+                    ? i === 0
+                      ? t('tf.true')
+                      : t('tf.false')
+                    : t('stats.optionN', { n: i + 1 }))}
               </span>
               <div className="h-4 flex-1 overflow-hidden rounded-full bg-black/25">
                 <div

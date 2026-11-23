@@ -110,14 +110,33 @@ export function registerSocketHandlers(io: Server, rooms: RoomManager) {
       ack?.({ ok: true })
     })
 
-    socket.on('player:join', (payload, ack) => {
+    socket.on('room:preview', (payload, ack) => {
       const pin = String(payload?.pin ?? '').trim()
-      const nickname = String(payload?.nickname ?? '')
       if (!/^\d{6}$/.test(pin)) {
         ack?.({ ok: false, message: '请输入 6 位 PIN 码' })
         return
       }
-      const result = rooms.joinPlayer(pin, nickname, socket.id)
+      const preview = rooms.previewRoom(pin)
+      if (!preview) {
+        ack?.({ ok: false, message: '房间不存在' })
+        return
+      }
+      if ('closed' in preview && preview.closed) {
+        ack?.({ ok: false, message: '游戏已开始，无法加入' })
+        return
+      }
+      ack?.({ ok: true, ...preview })
+    })
+
+    socket.on('player:join', (payload, ack) => {
+      const pin = String(payload?.pin ?? '').trim()
+      const nickname = String(payload?.nickname ?? '')
+      const language = String(payload?.language ?? '')
+      if (!/^\d{6}$/.test(pin)) {
+        ack?.({ ok: false, message: '请输入 6 位 PIN 码' })
+        return
+      }
+      const result = rooms.joinPlayer(pin, nickname, socket.id, language)
       if (!result.ok) {
         ack?.(result)
         return
@@ -130,6 +149,7 @@ export function registerSocketHandlers(io: Server, rooms: RoomManager) {
           nickname: result.player.nickname,
           score: result.player.score,
           avatarColor: result.player.avatarColor,
+          language: result.player.language,
         },
         snapshot: rooms.snapshot(result.room, result.player.id),
       })

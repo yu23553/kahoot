@@ -1,58 +1,207 @@
 import { v4 as uuid } from 'uuid'
-import type { AnswerPayload, PublicQuestion, Question, QuestionType, Room, StoredAnswer } from './types.js'
+import type {
+  AnswerPayload,
+  PublicQuestion,
+  Question,
+  QuestionLocale,
+  QuestionType,
+  Quiz,
+  QuizLanguage,
+  Room,
+  StoredAnswer,
+} from './types.js'
 
-export function normalizeQuestion(raw: Partial<Question> & { text?: string }): Question {
+function clampIndex(value: unknown, size: number) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0 || n >= size) return 0
+  return Math.floor(n)
+}
+
+function emptyLocale(type: QuestionType): QuestionLocale {
+  if (type === 'choice') return { text: '', options: ['', '', '', ''] }
+  if (type === 'truefalse') return { text: '', options: ['正确', '错误'] }
+  if (type === 'fill') return { text: '', acceptAnswers: [''] }
+  return { text: '', items: ['', ''] }
+}
+
+/** 兼容旧题库：无 locales 时从顶层 text/options 迁入 */
+export function normalizeQuestion(
+  raw: Partial<Question> & {
+    text?: string
+    options?: string[]
+    acceptAnswers?: string[]
+    items?: string[]
+    locales?: Record<string, QuestionLocale>
+  },
+  languageCodes: string[] = ['zh'],
+): Question {
   const type = (raw.type || 'choice') as QuestionType
-  const base = {
+  const codes = languageCodes.length ? languageCodes : ['zh']
+  const locales: Record<string, QuestionLocale> = {}
+
+  const legacy: QuestionLocale = {
+    text: String(raw.text ?? '').trim(),
+    options: raw.options?.map((o) => String(o)),
+    acceptAnswers: raw.acceptAnswers?.map((a) => String(a)),
+    items: raw.items?.map((i) => String(i)),
+  }
+
+  for (const code of codes) {
+    const src = raw.locales?.[code] ?? (code === codes[0] ? legacy : undefined) ?? emptyLocale(type)
+    locales[code] = normalizeLocale(type, src)
+  }
+
+  // 保留 locales 里多余的 key（编辑时临时语言）
+  if (raw.locales) {
+    for (const [code, loc] of Object.entries(raw.locales)) {
+      if (!locales[code]) locales[code] = normalizeLocale(type, loc)
+    }
+  }
+
+  const primary = locales[codes[0]]
+  const base: Question = {
     id: raw.id || uuid(),
     type,
-    text: String(raw.text ?? '').trim(),
     timeLimit: Number(raw.timeLimit) || 20,
+    locales,
   }
 
   if (type === 'choice') {
-    const options = (raw.options ?? ['', '', '', '']).map((o) => String(o).trim())
-    while (options.length < 4) options.push('')
-    return {
-      ...base,
-      options: options.slice(0, 4),
-      correctIndex: clampIndex(raw.correctIndex, 4),
-    }
+    return { ...base, correctIndex: clampIndex(raw.correctIndex, 4) }
   }
-
   if (type === 'truefalse') {
-    return {
-      ...base,
-      options: ['正确', '错误'],
-      correctIndex: Number(raw.correctIndex) === 1 ? 1 : 0,
-    }
+    return { ...base, correctIndex: Number(raw.correctIndex) === 1 ? 1 : 0 }
   }
-
-  if (type === 'fill') {
-    const acceptAnswers = (raw.acceptAnswers ?? [])
-      .map((a) => String(a).trim())
-      .filter(Boolean)
-    return { ...base, acceptAnswers }
-  }
-
-  const items = (raw.items ?? []).map((i) => String(i).trim()).filter(Boolean)
-  return { ...base, items }
+  // 确保主语言有内容引用方便调试
+  void primary
+  return base
 }
 
-export function validateQuestions(questions: Question[]) {
+function normalizeLocale(type: QuestionType, src: QuestionLocale): QuestionLocale {
+  const text = String(src.text ?? '').trim()
+  if (type === 'choice') {
+    const options = (src.options ?? ['', '', '', '']).map((o) => String(o).trim())
+    while (options.length < 4) options.push('')
+    return { text, options: options.slice(0, 4) }
+  }
+  if (type === 'truefalse') {
+    const options = (src.options ?? ['正确', '错误']).map((o) => String(o).trim())
+    return {
+      text,
+      options: [options[0] || '正确', options[1] || '错误'],
+    }
+  }
+  if (type === 'fill') {
+    return {
+      text,
+      acceptAnswers: (src.acceptAnswers ?? []).map((a) => String(a).trim()).filter(Boolean),
+    }
+  }
+  return {
+    text,
+    items: (src.items ?? []).map((i) => String(i).trim()).filter(Boolean),
+  }
+}
+
+export function normalizeQuizLanguages(
+  languages: QuizLanguage[] | undefined,
+  defaultLanguage?: string,
+): { languages: QuizLanguage[]; defaultLanguage: string } {
+  let list = (languages ?? [])
+    .map((l) => ({
+      code: String(l.code ?? '')
+        .trim()
+        .toLowerCase()
+        .slice(0, 16),
+      label: String(l.label ?? '').trim().slice(0, 32),
+    }))
+    .filter((l) => l.code && l.label)
+
+  if (list.length === 0) {
+    list = [{ code: 'zh', label: '中文' }]
+  }
+
+  // 去重 code
+  const seen = new Set<string>()
+  list = list.filter((l) => {
+    if (seen.has(l.code)) return false
+    seen.add(l.code)
+    return true
+  })
+
+  const def =
+    defaultLanguage && list.some((l) => l.code === defaultLanguage)
+      ? defaultLanguage
+      : list[0].code
+
+  return { languages: list, defaultLanguage: def }
+}
+
+export function normalizeQuizPayload(raw: {
+  title?: string
+  questions?: unknown[]
+  languages?: QuizLanguage[]
+  defaultLanguage?: string
+}): { title: string; questions: Question[]; languages: QuizLanguage[]; defaultLanguage: string } {
+  const title = String(raw.title ?? '').trim()
+  const { languages, defaultLanguage } = normalizeQuizLanguages(
+    raw.languages,
+    raw.defaultLanguage,
+  )
+  const codes = languages.map((l) => l.code)
+  const questions = (raw.questions ?? []).map((q) =>
+    normalizeQuestion(q as Parameters<typeof normalizeQuestion>[0], codes),
+  )
+  return { title, questions, languages, defaultLanguage }
+}
+
+export function validateQuestions(questions: Question[], languages: QuizLanguage[]) {
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error('至少需要 1 道题')
   }
-  for (const raw of questions) {
-    const q = normalizeQuestion(raw)
-    if (!q.text) throw new Error('题干不能为空')
+  if (!languages.length) throw new Error('至少需要一种语言')
+
+  for (const q of questions) {
     if (!q.timeLimit || q.timeLimit < 5 || q.timeLimit > 120) {
       throw new Error('倒计时需在 5–120 秒')
     }
-    if (q.type === 'choice') {
-      if (!q.options || q.options.length !== 4 || q.options.some((o) => !o)) {
-        throw new Error('选择题需要 4 个非空选项')
+    for (const lang of languages) {
+      const loc = q.locales?.[lang.code]
+      if (!loc?.text?.trim()) {
+        throw new Error(`请完善「${lang.label}」语言下的题干`)
       }
+      if (q.type === 'choice') {
+        if (!loc.options || loc.options.length !== 4 || loc.options.some((o) => !o.trim())) {
+          throw new Error(`「${lang.label}」选择题需要 4 个非空选项`)
+        }
+      }
+      if (q.type === 'truefalse') {
+        if (!loc.options || loc.options.length < 2 || loc.options.some((o) => !o.trim())) {
+          throw new Error(`请完善「${lang.label}」判断题选项文案`)
+        }
+      }
+      if (q.type === 'fill') {
+        if (!loc.acceptAnswers?.length) {
+          throw new Error(`「${lang.label}」填空题至少需要 1 个可接受答案`)
+        }
+      }
+      if (q.type === 'order') {
+        if (!loc.items || loc.items.length < 2) {
+          throw new Error(`「${lang.label}」排序题至少需要 2 个条目`)
+        }
+        if (loc.items.length > 8) throw new Error('排序题最多 8 个条目')
+      }
+    }
+
+    // 各语言排序条目数量必须一致
+    if (q.type === 'order') {
+      const counts = languages.map((l) => q.locales[l.code]?.items?.length ?? 0)
+      if (counts.some((c) => c !== counts[0])) {
+        throw new Error('各语言排序题条目数量必须相同')
+      }
+    }
+
+    if (q.type === 'choice') {
       if (q.correctIndex === undefined || q.correctIndex < 0 || q.correctIndex > 3) {
         throw new Error('请设置选择题正确答案')
       }
@@ -62,20 +211,35 @@ export function validateQuestions(questions: Question[]) {
         throw new Error('请设置判断题正确答案')
       }
     }
-    if (q.type === 'fill') {
-      if (!q.acceptAnswers?.length) throw new Error('填空题至少需要 1 个可接受答案')
-    }
-    if (q.type === 'order') {
-      if (!q.items || q.items.length < 2) throw new Error('排序题至少需要 2 个条目')
-      if (q.items.length > 8) throw new Error('排序题最多 8 个条目')
-    }
   }
 }
 
-function clampIndex(value: unknown, size: number) {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n < 0 || n >= size) return 0
-  return Math.floor(n)
+export function resolveLocale(
+  q: Question,
+  language: string,
+  fallback: string,
+): QuestionLocale & { language: string } {
+  const loc =
+    q.locales?.[language] ||
+    q.locales?.[fallback] ||
+    q.locales?.[Object.keys(q.locales ?? {})[0]] ||
+    emptyLocale(q.type || 'choice')
+  const used =
+    q.locales?.[language] ? language : q.locales?.[fallback] ? fallback : Object.keys(q.locales ?? {})[0] || fallback
+  return { ...loc, language: used }
+}
+
+export function quizLanguages(quiz: Quiz): QuizLanguage[] {
+  if (quiz.languages?.length) return quiz.languages
+  return [{ code: 'zh', label: '中文' }]
+}
+
+export function quizDefaultLanguage(quiz: Quiz): string {
+  const langs = quizLanguages(quiz)
+  if (quiz.defaultLanguage && langs.some((l) => l.code === quiz.defaultLanguage)) {
+    return quiz.defaultLanguage
+  }
+  return langs[0].code
 }
 
 export function shuffle<T>(list: T[]): T[] {
@@ -87,7 +251,6 @@ export function shuffle<T>(list: T[]): T[] {
   return arr
 }
 
-/** 填空规范化：去空格、小写、全角转半角 */
 export function normalizeFillText(input: string) {
   return String(input ?? '')
     .trim()
@@ -116,7 +279,6 @@ function levenshtein(a: string, b: string) {
   return dp[n]
 }
 
-/** 与标准答案的最佳相似度 0–1 */
 export function fillSimilarity(answer: string, acceptAnswers: string[] = []): number {
   const n = normalizeFillText(answer)
   if (!n) return 0
@@ -136,32 +298,33 @@ export function fillSimilarity(answer: string, acceptAnswers: string[] = []): nu
   return best
 }
 
-/** 填空：相似度 ≥ 0.72 视为“答对”（用于正确率统计） */
 export const FILL_CORRECT_THRESHOLD = 0.72
 
-export function isAnswerCorrect(q: Question, answer?: StoredAnswer | null): boolean {
+export function isAnswerCorrect(
+  q: Question,
+  answer: StoredAnswer | null | undefined,
+  language: string,
+  fallback: string,
+): boolean {
   if (!answer) return false
+  const loc = resolveLocale(q, language, fallback)
   if (q.type === 'choice' || q.type === 'truefalse') {
     return answer.optionIndex === q.correctIndex
   }
   if (q.type === 'fill') {
     const sim =
-      answer.similarity ?? fillSimilarity(String(answer.text ?? ''), q.acceptAnswers ?? [])
+      answer.similarity ?? fillSimilarity(String(answer.text ?? ''), loc.acceptAnswers ?? [])
     return sim >= FILL_CORRECT_THRESHOLD
   }
   if (q.type === 'order') {
     const order = answer.order ?? []
-    const correct = q.items ?? []
+    const correct = loc.items ?? []
     if (order.length !== correct.length) return false
     return order.every((item, i) => item === correct[i])
   }
   return false
 }
 
-/**
- * 填空计分：越接近标准答案越高，同等接近时越快越高。
- * 满分约 1000；完全不沾边（<0.4）得 0。
- */
 export function calcFillScore(similarity: number, elapsedMs: number, timeLimitSec: number) {
   if (similarity < 0.4) return 0
   const ratio = Math.min(1, Math.max(0, elapsedMs / (timeLimitSec * 1000)))
@@ -169,29 +332,41 @@ export function calcFillScore(similarity: number, elapsedMs: number, timeLimitSe
   return Math.round(1000 * similarity * timeFactor)
 }
 
-export function toPublicQuestion(room: Room): PublicQuestion {
+export function toPublicQuestion(room: Room, language: string): PublicQuestion {
   const q = room.quiz.questions[room.currentQuestionIndex]
+  const fallback = quizDefaultLanguage(room.quiz)
+  const loc = resolveLocale(q, language, fallback)
   const base: PublicQuestion = {
     index: room.currentQuestionIndex,
     total: room.quiz.questions.length,
     type: q.type || 'choice',
-    text: q.text,
+    text: loc.text,
     timeLimit: q.timeLimit,
     endsAt: room.questionEndsAt,
+    language: loc.language,
   }
   if (q.type === 'choice' || q.type === 'truefalse' || !q.type) {
-    return { ...base, type: q.type || 'choice', options: q.options }
+    return { ...base, type: q.type || 'choice', options: loc.options }
   }
   if (q.type === 'fill') {
     return base
   }
+  const items = loc.items ?? []
+  const indices =
+    room.shuffledIndices ?? items.map((_, i) => i)
   return {
     ...base,
-    items: room.shuffledItems ?? shuffle(q.items ?? []),
+    items: indices.map((i) => items[i]).filter((x) => x !== undefined),
   }
 }
 
-export function sanitizeAnswerPayload(q: Question, payload: AnswerPayload): StoredAnswer | null {
+export function sanitizeAnswerPayload(
+  q: Question,
+  payload: AnswerPayload,
+  language: string,
+  fallback: string,
+): StoredAnswer | null {
+  const loc = resolveLocale(q, language, fallback)
   if (q.type === 'choice') {
     const idx = Number(payload.optionIndex)
     if (!Number.isInteger(idx) || idx < 0 || idx > 3) return null
@@ -209,8 +384,9 @@ export function sanitizeAnswerPayload(q: Question, payload: AnswerPayload): Stor
   }
   if (q.type === 'order') {
     const order = Array.isArray(payload.order) ? payload.order.map(String) : null
-    if (!order || order.length !== (q.items?.length ?? 0)) return null
-    const set = new Set(q.items)
+    const items = loc.items ?? []
+    if (!order || order.length !== items.length) return null
+    const set = new Set(items)
     if (order.some((item) => !set.has(item)) || new Set(order).size !== order.length) return null
     return { order, elapsedMs: 0 }
   }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useUiLanguage } from '../context/UiLanguageContext'
 import type { Player } from '../types'
 
 export function Podium({
@@ -78,6 +79,7 @@ function PodiumColumn({
   delay: number
   crown?: boolean
 }) {
+  const { t } = useUiLanguage()
   const colors = {
     1: 'from-[#ffd700] to-[#f5a623]',
     2: 'from-[#c0c7d1] to-[#8e9aab]',
@@ -110,7 +112,9 @@ function PodiumColumn({
         <p className="mt-2 max-w-full truncate text-center text-sm font-black text-white">
           {player.nickname}
         </p>
-        <p className="text-xs font-bold text-white/70">{player.score} 分</p>
+        <p className="text-xs font-bold text-white/70">
+          {t('podium.points', { n: player.score })}
+        </p>
       </div>
       <div
         className={`flex w-full items-start justify-center rounded-t-2xl bg-gradient-to-b pt-3 font-display text-3xl font-black text-white/90 shadow-inner ${colors[place]}`}

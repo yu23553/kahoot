@@ -1,4 +1,4 @@
-import type { Question } from '../types'
+import type { Question, QuizLanguage } from '../types'
 import { getApiBase } from './config'
 
 export type AuthSession = {
@@ -11,6 +11,8 @@ export type RemoteQuiz = {
   id: string
   title: string
   questions: Question[]
+  languages: QuizLanguage[]
+  defaultLanguage: string
   ownerId: string
   createdAt: number
   updatedAt: number
@@ -55,7 +57,12 @@ export const api = {
   },
   createQuiz(
     token: string,
-    payload: { title: string; questions: RemoteQuiz['questions'] },
+    payload: {
+      title: string
+      questions: RemoteQuiz['questions']
+      languages: QuizLanguage[]
+      defaultLanguage: string
+    },
   ) {
     return request<RemoteQuiz>(
       '/quizzes',
@@ -69,7 +76,12 @@ export const api = {
   updateQuiz(
     token: string,
     id: string,
-    payload: { title: string; questions: RemoteQuiz['questions'] },
+    payload: {
+      title: string
+      questions: RemoteQuiz['questions']
+      languages: QuizLanguage[]
+      defaultLanguage: string
+    },
   ) {
     return request<RemoteQuiz>(
       `/quizzes/${id}`,

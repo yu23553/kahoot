@@ -4,8 +4,8 @@ import { QuestionIntro } from '../components/QuestionIntro'
 import { RoundStatsPanel } from '../components/RoundStatsPanel'
 import { AnswerShape, CountdownRing, Logo } from '../components/ui'
 import { useGame } from '../context/GameContext'
+import { useUiLanguage } from '../context/UiLanguageContext'
 import { ANSWER_COLORS } from '../data/mock'
-import { QUESTION_TYPE_LABELS } from '../types'
 
 export default function HostPlayPage() {
   const navigate = useNavigate()
@@ -26,6 +26,7 @@ export default function HostPlayPage() {
     reconnecting,
     connected,
   } = useGame()
+  const { t, questionTypeLabel } = useUiLanguage()
 
   useEffect(() => {
     if (role !== 'host' || !pin) navigate('/', { replace: true })
@@ -50,7 +51,7 @@ export default function HostPlayPage() {
   if (phase === 'stats' && roundStats) {
     return (
       <div className="bg-kahoot-gradient min-h-dvh px-4 py-6">
-        <div className="mx-auto mb-4 flex max-w-4xl items-center justify-between">
+        <div className="mx-auto mb-4 flex max-w-4xl items-center justify-between pr-28">
           <Logo size="sm" />
           <span className="rounded-lg bg-white/15 px-3 py-1 text-sm font-bold text-white">
             PIN {pin}
@@ -60,7 +61,7 @@ export default function HostPlayPage() {
           stats={roundStats}
           players={players}
           isHost
-          options={currentQuestion?.options}
+          options={roundStats.options ?? currentQuestion?.options}
           onNext={() => void nextQuestion().catch(() => undefined)}
         />
       </div>
@@ -70,7 +71,7 @@ export default function HostPlayPage() {
   if (!currentQuestion) {
     return (
       <div className="bg-kahoot-gradient flex min-h-dvh flex-col items-center justify-center gap-3 text-white">
-        <p>{reconnecting || !connected ? '重连中…' : '等待题目…'}</p>
+        <p>{reconnecting || !connected ? t('common.reconnect') : t('host.waitingQuestion')}</p>
       </div>
     )
   }
@@ -80,17 +81,21 @@ export default function HostPlayPage() {
   return (
     <div className="bg-kahoot-gradient min-h-dvh px-4 py-4 sm:py-6">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3 pr-28">
           <Logo size="sm" />
           <div className="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-bold text-white">
-            PIN {pin} · {QUESTION_TYPE_LABELS[type]} · 第 {currentQuestionIndex + 1}/
-            {questionCount} 题
+            {t('host.meta', {
+              pin: pin || '',
+              type: questionTypeLabel(type),
+              n: currentQuestionIndex + 1,
+              total: questionCount,
+            })}
           </div>
         </header>
 
         {(!connected || reconnecting) && (
           <p className="rounded-xl bg-amber-500/90 px-3 py-2 text-center text-sm font-bold text-white">
-            网络重连中，请稍候…
+            {t('common.reconnectWait')}
           </p>
         )}
 
@@ -117,7 +122,7 @@ export default function HostPlayPage() {
             </div>
 
             <p className="text-sm font-bold text-white/70">
-              已作答 {answeredCount}/{players.length}
+              {t('host.answered', { a: answeredCount, total: players.length })}
             </p>
 
             {(type === 'choice' || type === 'truefalse') && (
@@ -144,13 +149,13 @@ export default function HostPlayPage() {
 
             {type === 'fill' && (
               <div className="rounded-2xl bg-white/10 p-5 text-white">
-                <p className="font-bold text-white/80">玩家正在输入答案（支持模糊匹配计分）…</p>
+                <p className="font-bold text-white/80">{t('host.playersFilling')}</p>
               </div>
             )}
 
             {type === 'order' && (
               <div className="rounded-2xl bg-white/10 p-5 text-white">
-                <p className="font-bold text-white/80">玩家正在调整排序…</p>
+                <p className="font-bold text-white/80">{t('host.playersOrdering')}</p>
               </div>
             )}
           </>

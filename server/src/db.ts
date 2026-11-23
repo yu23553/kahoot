@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { v4 as uuid } from 'uuid'
-import type { Quiz, Question, User } from './types.js'
+import { normalizeQuestion, quizDefaultLanguage, quizLanguages } from './questionUtils.js'
+import type { Question, Quiz, QuizLanguage, User } from './types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, '..', 'data')
@@ -31,6 +32,21 @@ function save(db: DbShape) {
   writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
 }
 
+/** 读取时把旧题库补全 languages / locales */
+function hydrateQuiz(raw: Quiz): Quiz {
+  const languages: QuizLanguage[] =
+    raw.languages?.length > 0 ? raw.languages : [{ code: 'zh', label: '中文' }]
+  const codes = languages.map((l) => l.code)
+  const questions = (raw.questions ?? []).map((q) =>
+    normalizeQuestion(q as Parameters<typeof normalizeQuestion>[0], codes),
+  )
+  const defaultLanguage =
+    raw.defaultLanguage && codes.includes(raw.defaultLanguage)
+      ? raw.defaultLanguage
+      : codes[0]
+  return { ...raw, languages, defaultLanguage, questions }
+}
+
 export const db = {
   findUserByUsername(username: string) {
     return ensureDb().users.find((u) => u.username.toLowerCase() === username.toLowerCase())
@@ -53,18 +69,28 @@ export const db = {
   listQuizzes(ownerId: string) {
     return ensureDb()
       .quizzes.filter((q) => q.ownerId === ownerId)
+      .map(hydrateQuiz)
       .sort((a, b) => b.updatedAt - a.updatedAt)
   },
   getQuiz(id: string) {
-    return ensureDb().quizzes.find((q) => q.id === id)
+    const quiz = ensureDb().quizzes.find((q) => q.id === id)
+    return quiz ? hydrateQuiz(quiz) : undefined
   },
-  createQuiz(ownerId: string, title: string, questions: Question[]): Quiz {
+  createQuiz(
+    ownerId: string,
+    title: string,
+    questions: Question[],
+    languages: QuizLanguage[],
+    defaultLanguage: string,
+  ): Quiz {
     const data = ensureDb()
     const now = Date.now()
     const quiz: Quiz = {
       id: uuid(),
       title,
       questions,
+      languages,
+      defaultLanguage,
       ownerId,
       createdAt: now,
       updatedAt: now,
@@ -73,7 +99,14 @@ export const db = {
     save(data)
     return quiz
   },
-  updateQuiz(id: string, ownerId: string, title: string, questions: Question[]): Quiz | null {
+  updateQuiz(
+    id: string,
+    ownerId: string,
+    title: string,
+    questions: Question[],
+    languages: QuizLanguage[],
+    defaultLanguage: string,
+  ): Quiz | null {
     const data = ensureDb()
     const idx = data.quizzes.findIndex((q) => q.id === id && q.ownerId === ownerId)
     if (idx < 0) return null
@@ -81,6 +114,8 @@ export const db = {
       ...data.quizzes[idx],
       title,
       questions,
+      languages,
+      defaultLanguage,
       updatedAt: Date.now(),
     }
     save(data)
@@ -94,3 +129,6 @@ export const db = {
     return data.quizzes.length < before
   },
 }
+
+// re-export helpers used by routes for typing
+export { quizDefaultLanguage, quizLanguages }

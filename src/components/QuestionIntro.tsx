@@ -1,4 +1,5 @@
-import { QUESTION_TYPE_HINTS, QUESTION_TYPE_LABELS, type QuestionType } from '../types'
+import { useUiLanguage } from '../context/UiLanguageContext'
+import type { QuestionType } from '../types'
 
 const TYPE_VISUAL: Record<
   QuestionType,
@@ -38,12 +39,13 @@ export function QuestionIntro({
   /** 0–1 remaining */
   progress: number
 }) {
+  const { t, questionTypeLabel, questionTypeHint } = useUiLanguage()
   const visual = TYPE_VISUAL[type] || TYPE_VISUAL.choice
 
   return (
     <div className="bg-kahoot-gradient flex min-h-dvh flex-col items-center justify-center gap-8 px-4 text-center">
       <p className="text-sm font-bold uppercase tracking-[0.25em] text-white/55">
-        Question {index + 1} / {total}
+        {t('intro.question', { n: index + 1, total })}
       </p>
 
       <div
@@ -61,10 +63,10 @@ export function QuestionIntro({
 
       <div className="animate-pop-in space-y-2">
         <h1 className="font-display text-4xl font-black text-white sm:text-5xl">
-          {QUESTION_TYPE_LABELS[type]}
+          {questionTypeLabel(type)}
         </h1>
         <p className="mx-auto max-w-sm text-base font-bold text-white/75 sm:text-lg">
-          {QUESTION_TYPE_HINTS[type]}
+          {questionTypeHint(type)}
         </p>
       </div>
 
@@ -75,7 +77,7 @@ export function QuestionIntro({
             style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%`, background: visual.accent }}
           />
         </div>
-        <p className="text-xs font-bold text-white/50">即将开始答题…</p>
+        <p className="text-xs font-bold text-white/50">{t('intro.starting')}</p>
       </div>
     </div>
   )

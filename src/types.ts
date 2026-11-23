@@ -1,14 +1,23 @@
 export type QuestionType = 'choice' | 'truefalse' | 'fill' | 'order'
 
+export type QuizLanguage = {
+  code: string
+  label: string
+}
+
+export type QuestionLocale = {
+  text: string
+  options?: string[]
+  acceptAnswers?: string[]
+  items?: string[]
+}
+
 export type Question = {
   id: string
   type: QuestionType
-  text: string
   timeLimit: number
-  options?: string[]
   correctIndex?: number
-  acceptAnswers?: string[]
-  items?: string[]
+  locales: Record<string, QuestionLocale>
 }
 
 export type Player = {
@@ -16,6 +25,7 @@ export type Player = {
   nickname: string
   score: number
   avatarColor: string
+  language?: string
   isMock?: boolean
 }
 
@@ -29,6 +39,8 @@ export type GamePhase =
 
 export type QuizDraft = {
   title: string
+  languages: QuizLanguage[]
+  defaultLanguage: string
   questions: Question[]
 }
 
@@ -39,6 +51,7 @@ export type PublicQuestion = {
   text: string
   timeLimit: number
   endsAt: number
+  language?: string
   options?: string[]
   items?: string[]
 }
@@ -69,6 +82,7 @@ export type RoundStatsView = {
   correctIndex: number | null
   correctAnswers: string[] | null
   correctOrder: string[] | null
+  options?: string[]
   answerCounts: number[]
   fillAnswers: FillAnswerStat[]
   correctCount: number
@@ -93,3 +107,10 @@ export const QUESTION_TYPE_HINTS: Record<QuestionType, string> = {
   fill: '输入答案，越接近标准答案分越高',
   order: '将条目调整为正确顺序',
 }
+
+export const PRESET_LANGUAGES: QuizLanguage[] = [
+  { code: 'zh', label: '中文' },
+  { code: 'th', label: 'ไทย' },
+  { code: 'id', label: 'Indonesia' },
+  { code: 'en', label: 'English' },
+]

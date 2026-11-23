@@ -21,7 +21,8 @@ const PORT = Number(process.env.TUNNEL_PORT || 3001)
 const API = process.env.TUNNEL_API || 'http://127.0.0.1:3001'
 const CF_URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi
 // 只匹配真实隧道域名，避免误抓欢迎页里的 https://admin.localhost.run
-const LHR_URL_RE = /https:\/\/[a-z0-9]+\.lhr\.life/gi
+// 兼容 xxx.lhr.life 与新格式 xxx.app.lhr.life
+const LHR_URL_RE = /https:\/\/[a-z0-9-]+(?:\.app)?\.lhr\.life/gi
 const RETRY_MS = Number(process.env.TUNNEL_RETRY_MS || 4000)
 
 let stopping = false

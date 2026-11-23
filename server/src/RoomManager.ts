@@ -4,6 +4,9 @@ import {
   fillSimilarity,
   isAnswerCorrect,
   normalizeQuestion,
+  quizDefaultLanguage,
+  quizLanguages,
+  resolveLocale,
   sanitizeAnswerPayload,
   shuffle,
   toPublicQuestion,
@@ -50,6 +53,7 @@ function toPublicPlayers(room: Room): PublicPlayer[] {
       nickname: p.nickname,
       score: p.score,
       avatarColor: p.avatarColor,
+      language: p.language,
     }))
     .sort((a, b) => b.score - a.score)
 }
@@ -96,9 +100,14 @@ export class RoomManager {
 
     const pin = generatePin(new Set(this.rooms.keys()))
     const now = Date.now()
+    const languages = quizLanguages(quiz)
+    const defaultLanguage = quizDefaultLanguage(quiz)
+    const codes = languages.map((l) => l.code)
     const normalizedQuiz: Quiz = {
       ...structuredClone(quiz),
-      questions: quiz.questions.map((q) => normalizeQuestion(q)),
+      languages,
+      defaultLanguage,
+      questions: quiz.questions.map((q) => normalizeQuestion(q, codes)),
     }
     const room: Room = {
       pin,
@@ -114,7 +123,7 @@ export class RoomManager {
       answers: new Map(),
       lastRoundScores: new Map(),
       lastRoundStats: null,
-      shuffledItems: null,
+      shuffledIndices: null,
       createdAt: now,
       lastActiveAt: now,
       timer: null,
@@ -147,12 +156,20 @@ export class RoomManager {
     return room
   }
 
-  joinPlayer(pin: string, nickname: string, socketId: string) {
+  joinPlayer(pin: string, nickname: string, socketId: string, language?: string) {
     const room = this.rooms.get(pin)
     if (!room) return { ok: false as const, message: '房间不存在' }
     if (room.phase !== 'lobby') return { ok: false as const, message: '游戏已开始，无法加入' }
     if (room.players.size >= MAX_ROOM_PLAYERS) {
       return { ok: false as const, message: `房间已满（最多 ${MAX_ROOM_PLAYERS} 人）` }
+    }
+
+    const langs = quizLanguages(room.quiz)
+    const def = quizDefaultLanguage(room.quiz)
+    const langCode = String(language ?? '').trim().toLowerCase()
+    const chosen = langs.some((l) => l.code === langCode) ? langCode : def
+    if (langs.length > 1 && !langCode) {
+      return { ok: false as const, message: '请选择答题语言' }
     }
 
     const name = nickname.trim().slice(0, 16)
@@ -167,6 +184,7 @@ export class RoomManager {
       score: 0,
       avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)],
       socketId,
+      language: chosen,
     }
     room.players.set(player.id, player)
     this.playerSocketIndex.set(socketId, { pin, playerId: player.id })
@@ -260,13 +278,18 @@ export class RoomManager {
     if (!room || room.phase !== 'question') return { ok: false as const, message: '当前不能答题' }
     if (room.answers.has(info.playerId)) return { ok: false as const, message: '已提交' }
 
+    const player = room.players.get(info.playerId)
+    if (!player) return { ok: false as const, message: '玩家不存在' }
+
     const q = room.quiz.questions[room.currentQuestionIndex]
-    const sanitized = sanitizeAnswerPayload(q, payload)
+    const fallback = quizDefaultLanguage(room.quiz)
+    const sanitized = sanitizeAnswerPayload(q, payload, player.language, fallback)
     if (!sanitized) return { ok: false as const, message: '答案无效' }
 
     sanitized.elapsedMs = Date.now() - room.questionStartedAt
     if (q.type === 'fill' && sanitized.text !== undefined) {
-      sanitized.similarity = fillSimilarity(sanitized.text, q.acceptAnswers ?? [])
+      const loc = resolveLocale(q, player.language, fallback)
+      sanitized.similarity = fillSimilarity(sanitized.text, loc.acceptAnswers ?? [])
     }
     room.answers.set(info.playerId, sanitized)
     touch(room)
@@ -283,6 +306,27 @@ export class RoomManager {
     return { ok: true as const }
   }
 
+  private emitLocalized(
+    room: Room,
+    event: string,
+    build: (language: string) => Record<string, unknown>,
+  ) {
+    const players = toPublicPlayers(room)
+    for (const player of room.players.values()) {
+      if (!player.socketId) continue
+      this.io.to(player.socketId).emit(event, {
+        ...build(player.language),
+        players,
+      })
+    }
+    if (room.hostSocketId) {
+      this.io.to(room.hostSocketId).emit(event, {
+        ...build(quizDefaultLanguage(room.quiz)),
+        players,
+      })
+    }
+  }
+
   private beginIntro(room: Room, index: number) {
     clearTimers(room)
     room.currentQuestionIndex = index
@@ -290,7 +334,7 @@ export class RoomManager {
     room.answers.clear()
     room.lastRoundScores.clear()
     room.lastRoundStats = null
-    room.shuffledItems = null
+    room.shuffledIndices = null
     const q = room.quiz.questions[index]
     room.introEndsAt = Date.now() + INTRO_DURATION_MS
 
@@ -313,15 +357,17 @@ export class RoomManager {
     room.phase = 'question'
     room.answers.clear()
     const q = room.quiz.questions[index]
-    room.shuffledItems = q.type === 'order' ? shuffle(q.items ?? []) : null
+    const fallback = quizDefaultLanguage(room.quiz)
+    const primaryItems = resolveLocale(q, fallback, fallback).items ?? []
+    room.shuffledIndices =
+      q.type === 'order' ? shuffle(primaryItems.map((_, i) => i)) : null
     room.questionStartedAt = Date.now()
     room.questionEndsAt = room.questionStartedAt + q.timeLimit * 1000
     touch(room)
 
-    this.io.to(`room:${room.pin}`).emit('question:show', {
-      question: toPublicQuestion(room),
-      players: toPublicPlayers(room),
-    })
+    this.emitLocalized(room, 'question:show', (language) => ({
+      question: toPublicQuestion(room, language),
+    }))
 
     room.timer = setTimeout(() => this.finishQuestion(room), q.timeLimit * 1000 + 50)
   }
@@ -333,6 +379,7 @@ export class RoomManager {
     touch(room)
 
     const q = room.quiz.questions[room.currentQuestionIndex]
+    const fallback = quizDefaultLanguage(room.quiz)
     const roundScores: Record<string, number> = {}
     const answerCounts = [0, 0, 0, 0]
     const fillBucket = new Map<string, { count: number; simSum: number }>()
@@ -355,11 +402,14 @@ export class RoomManager {
       let gained = 0
       let correct = false
       if (q.type === 'fill') {
-        const sim = ans?.similarity ?? 0
-        correct = isAnswerCorrect(q, ans)
+        const loc = resolveLocale(q, player.language, fallback)
+        const sim =
+          ans?.similarity ??
+          fillSimilarity(String(ans?.text ?? ''), loc.acceptAnswers ?? [])
+        correct = isAnswerCorrect(q, ans, player.language, fallback)
         gained = calcFillScore(sim, ans?.elapsedMs ?? q.timeLimit * 1000, q.timeLimit)
       } else {
-        correct = isAnswerCorrect(q, ans)
+        correct = isAnswerCorrect(q, ans, player.language, fallback)
         gained = calcScore(correct, ans?.elapsedMs ?? q.timeLimit * 1000, q.timeLimit)
       }
 
@@ -386,13 +436,18 @@ export class RoomManager {
 
     const answeredCount = room.answers.size
     const totalPlayers = room.players.size
-    const stats: RoundStats = {
+    const hasNext = room.currentQuestionIndex + 1 < room.quiz.questions.length
+
+    // 存默认语言版本供 snapshot
+    const hostLoc = resolveLocale(q, fallback, fallback)
+    room.lastRoundStats = {
       questionIndex: room.currentQuestionIndex,
       type: q.type || 'choice',
-      questionText: q.text,
+      questionText: hostLoc.text,
       correctIndex: q.correctIndex,
-      correctAnswers: q.acceptAnswers,
-      correctOrder: q.items,
+      correctAnswers: hostLoc.acceptAnswers,
+      correctOrder: hostLoc.items,
+      options: hostLoc.options,
       answerCounts,
       fillAnswers,
       correctCount,
@@ -402,12 +457,27 @@ export class RoomManager {
       roundScores,
       playerResults,
     }
-    room.lastRoundStats = stats
 
-    this.io.to(`room:${room.pin}`).emit('question:stats', {
-      ...stats,
-      players: toPublicPlayers(room),
-      hasNext: room.currentQuestionIndex + 1 < room.quiz.questions.length,
+    this.emitLocalized(room, 'question:stats', (language) => {
+      const loc = resolveLocale(q, language, fallback)
+      return {
+        questionIndex: room.currentQuestionIndex,
+        type: q.type || 'choice',
+        questionText: loc.text,
+        correctIndex: q.correctIndex,
+        correctAnswers: loc.acceptAnswers,
+        correctOrder: loc.items,
+        options: loc.options,
+        answerCounts,
+        fillAnswers,
+        correctCount,
+        answeredCount,
+        totalPlayers,
+        accuracy: totalPlayers > 0 ? correctCount / totalPlayers : 0,
+        roundScores,
+        playerResults,
+        hasNext,
+      }
     })
   }
 
@@ -419,6 +489,8 @@ export class RoomManager {
       phase: room.phase as RoomPhase,
       players: toPublicPlayers(room),
       maxPlayers: MAX_ROOM_PLAYERS,
+      languages: quizLanguages(room.quiz),
+      defaultLanguage: quizDefaultLanguage(room.quiz),
     })
   }
 
@@ -426,7 +498,25 @@ export class RoomManager {
     return this.playerSocketIndex.get(socketId)?.playerId
   }
 
+  previewRoom(pin: string) {
+    const room = this.rooms.get(pin)
+    if (!room) return null
+    if (room.phase !== 'lobby') return { closed: true as const }
+    return {
+      pin: room.pin,
+      title: room.quiz.title,
+      questionCount: room.quiz.questions.length,
+      playerCount: room.players.size,
+      maxPlayers: MAX_ROOM_PLAYERS,
+      languages: quizLanguages(room.quiz),
+      defaultLanguage: quizDefaultLanguage(room.quiz),
+      phase: room.phase,
+    }
+  }
+
   snapshot(room: Room, forPlayerId?: string) {
+    const player = forPlayerId ? room.players.get(forPlayerId) : undefined
+    const language = player?.language ?? quizDefaultLanguage(room.quiz)
     const base = {
       pin: room.pin,
       title: room.quiz.title,
@@ -435,6 +525,9 @@ export class RoomManager {
       players: toPublicPlayers(room),
       currentQuestionIndex: room.currentQuestionIndex,
       maxPlayers: MAX_ROOM_PLAYERS,
+      languages: quizLanguages(room.quiz),
+      defaultLanguage: quizDefaultLanguage(room.quiz),
+      myLanguage: language,
     }
 
     const myAns = forPlayerId ? room.answers.get(forPlayerId) : undefined
@@ -452,17 +545,24 @@ export class RoomManager {
     if (room.phase === 'question') {
       return {
         ...base,
-        question: toPublicQuestion(room),
+        question: toPublicQuestion(room, language),
         answeredCount: room.answers.size,
         myAnswer: myAnswerView(myAns),
       }
     }
 
     if (room.phase === 'stats' && room.lastRoundStats) {
+      const q = room.quiz.questions[room.currentQuestionIndex]
+      const fallback = quizDefaultLanguage(room.quiz)
+      const loc = resolveLocale(q, language, fallback)
       return {
         ...base,
-        question: toPublicQuestion(room),
+        question: toPublicQuestion(room, language),
         ...room.lastRoundStats,
+        questionText: loc.text,
+        correctAnswers: loc.acceptAnswers,
+        correctOrder: loc.items,
+        options: loc.options,
         myAnswer: myAnswerView(myAns),
         hasNext: room.currentQuestionIndex + 1 < room.quiz.questions.length,
       }
@@ -480,7 +580,7 @@ export class RoomManager {
     room.answers.clear()
     room.lastRoundScores.clear()
     room.lastRoundStats = null
-    room.shuffledItems = null
+    room.shuffledIndices = null
     for (const p of room.players.values()) p.score = 0
     touch(room)
     this.broadcastLobby(room)

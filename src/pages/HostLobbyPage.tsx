@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { JoinInvite } from '../components/JoinInvite'
 import { Logo } from '../components/ui'
 import { useGame } from '../context/GameContext'
+import { useUiLanguage } from '../context/UiLanguageContext'
 
 export default function HostLobbyPage() {
   const navigate = useNavigate()
   const { pin, quizTitle, questionCount, players, startGame, phase, role, goHome } = useGame()
+  const { t } = useUiLanguage()
   const [error, setError] = useState('')
   const [starting, setStarting] = useState(false)
 
@@ -26,7 +28,7 @@ export default function HostLobbyPage() {
       await startGame()
       navigate('/host/play')
     } catch (e) {
-      setError(e instanceof Error ? e.message : '开始失败')
+      setError(e instanceof Error ? e.message : t('lobby.startFailed'))
     } finally {
       setStarting(false)
     }
@@ -35,7 +37,7 @@ export default function HostLobbyPage() {
   return (
     <div className="bg-kahoot-gradient min-h-dvh px-4 py-6 sm:py-10">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 pr-28">
           <Logo size="sm" />
           <button
             type="button"
@@ -45,24 +47,22 @@ export default function HostLobbyPage() {
             }}
             className="rounded-lg bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/20"
           >
-            关闭房间
+            {t('lobby.closeRoom')}
           </button>
         </div>
 
         <section className="space-y-4 text-center">
           <h1 className="font-display text-2xl font-black text-white sm:text-3xl">{quizTitle}</h1>
-          <p className="text-white/70">共 {questionCount} 题 · 邀请玩家加入</p>
+          <p className="text-white/70">{t('lobby.invite', { n: questionCount })}</p>
           <JoinInvite pin={pin} />
         </section>
 
         <section className="rounded-2xl bg-white/10 p-4 backdrop-blur sm:p-6">
           <h2 className="mb-4 text-lg font-black text-white">
-            玩家列表（{players.length}/80）
+            {t('lobby.players', { n: players.length })}
           </h2>
           {players.length === 0 ? (
-            <p className="py-10 text-center text-white/60">
-              还没有人加入。可让玩家输入 PIN，或用微信扫描上方二维码。
-            </p>
+            <p className="py-10 text-center text-white/60">{t('lobby.empty')}</p>
           ) : (
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {players.map((p) => (
@@ -91,7 +91,7 @@ export default function HostLobbyPage() {
           disabled={starting || players.length === 0}
           className="mx-auto w-full max-w-md rounded-2xl bg-kahoot-magenta py-4 text-xl font-black text-white shadow-xl transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
         >
-          {starting ? '开始中…' : '开始游戏'}
+          {starting ? t('lobby.starting') : t('lobby.start')}
         </button>
       </div>
     </div>
