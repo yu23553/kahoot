@@ -10,6 +10,11 @@ import type {
   Room,
   StoredAnswer,
 } from './types.js'
+import {
+  DEFAULT_QUESTION_POINTS,
+  MAX_QUESTION_POINTS,
+  MIN_QUESTION_POINTS,
+} from './types.js'
 
 function clampIndex(value: unknown, size: number) {
   const n = Number(value)
@@ -59,10 +64,15 @@ export function normalizeQuestion(
   }
 
   const primary = locales[codes[0]]
+  const pointsRaw = Number((raw as { points?: number }).points)
+  const points = Number.isFinite(pointsRaw)
+    ? Math.min(MAX_QUESTION_POINTS, Math.max(MIN_QUESTION_POINTS, Math.round(pointsRaw)))
+    : DEFAULT_QUESTION_POINTS
   const base: Question = {
     id: raw.id || uuid(),
     type,
     timeLimit: Number(raw.timeLimit) || 20,
+    points,
     locales,
   }
 
@@ -164,6 +174,13 @@ export function validateQuestions(questions: Question[], languages: QuizLanguage
   for (const q of questions) {
     if (!q.timeLimit || q.timeLimit < 5 || q.timeLimit > 120) {
       throw new Error('倒计时需在 5–120 秒')
+    }
+    if (
+      !Number.isFinite(q.points) ||
+      q.points < MIN_QUESTION_POINTS ||
+      q.points > MAX_QUESTION_POINTS
+    ) {
+      throw new Error(`题目分值需在 ${MIN_QUESTION_POINTS}–${MAX_QUESTION_POINTS}`)
     }
     for (const lang of languages) {
       const loc = q.locales?.[lang.code]
@@ -325,11 +342,22 @@ export function isAnswerCorrect(
   return false
 }
 
-export function calcFillScore(similarity: number, elapsedMs: number, timeLimitSec: number) {
+export function calcFillScore(
+  similarity: number,
+  elapsedMs: number,
+  timeLimitSec: number,
+  maxPoints = DEFAULT_QUESTION_POINTS,
+) {
   if (similarity < 0.4) return 0
   const ratio = Math.min(1, Math.max(0, elapsedMs / (timeLimitSec * 1000)))
   const timeFactor = 1 - ratio / 2
-  return Math.round(1000 * similarity * timeFactor)
+  return Math.round(maxPoints * similarity * timeFactor)
+}
+
+export function questionPoints(q: { points?: number }) {
+  const n = Number(q.points)
+  if (!Number.isFinite(n)) return DEFAULT_QUESTION_POINTS
+  return Math.min(MAX_QUESTION_POINTS, Math.max(MIN_QUESTION_POINTS, Math.round(n)))
 }
 
 export function toPublicQuestion(room: Room, language: string): PublicQuestion {

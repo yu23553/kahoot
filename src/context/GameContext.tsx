@@ -43,6 +43,7 @@ type GameContextValue = {
   players: Player[]
   currentPlayerId: string | null
   phase: GamePhase
+  locked: boolean
   currentQuestionIndex: number
   timeLeft: number
   introProgress: number
@@ -82,10 +83,13 @@ type GameContextValue = {
     title: string
     languages: { code: string; label: string }[]
     defaultLanguage: string
+    locked?: boolean
   }>
   startGame: () => Promise<void>
   nextQuestion: () => Promise<void>
   submitAnswer: (payload: AnswerPayload) => Promise<void>
+  kickPlayer: (playerId: string) => Promise<void>
+  setRoomLocked: (locked: boolean) => Promise<void>
   backToLobby: () => Promise<void>
   goHome: () => void
 }
@@ -177,6 +181,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [players, setPlayers] = useState<Player[]>([])
   const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(initialSession?.playerId ?? null)
   const [phase, setPhase] = useState<GamePhase>('idle')
+  const [locked, setLocked] = useState(false)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [timeLeft, setTimeLeft] = useState(0)
   const [endsAt, setEndsAt] = useState(0)
@@ -223,6 +228,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (typeof snapshot.questionCount === 'number') setQuestionCount(snapshot.questionCount)
     if (typeof snapshot.phase === 'string') setPhase(snapshot.phase as GamePhase)
     if (Array.isArray(snapshot.players)) setPlayers(snapshot.players as Player[])
+    if (typeof snapshot.locked === 'boolean') setLocked(snapshot.locked)
     if (typeof snapshot.currentQuestionIndex === 'number') {
       setCurrentQuestionIndex(snapshot.currentQuestionIndex)
     }
@@ -335,12 +341,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       questionCount: number
       phase: GamePhase
       players: Player[]
+      locked?: boolean
     }) => {
       setPin(payload.pin)
       setQuizTitle(payload.title)
       setQuestionCount(payload.questionCount)
       setPhase(payload.phase)
       setPlayers(payload.players)
+      if (typeof payload.locked === 'boolean') setLocked(payload.locked)
     }
 
     const onIntro = (payload: {
@@ -439,6 +447,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setPhase('idle')
       setPlayers([])
       setCurrentPlayerId(null)
+      setLocked(false)
+      saveSession(null)
+    }
+
+    const onKicked = (payload: { reason?: string }) => {
+      setError(payload.reason || '你已被主持人移出房间')
+      setRole('none')
+      setPin('')
+      setPhase('idle')
+      setPlayers([])
+      setCurrentPlayerId(null)
+      setLocked(false)
+      setQuizTitle('')
+      setQuestionCount(0)
       saveSession(null)
     }
 
@@ -453,6 +475,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     socket.on('game:end', onEnd)
     socket.on('game:reset', onReset)
     socket.on('room:closed', onClosed)
+    socket.on('player:kicked', onKicked)
     setConnected(socket.connected)
     if (socket.connected) void tryReconnect()
 
@@ -468,6 +491,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       socket.off('game:end', onEnd)
       socket.off('game:reset', onReset)
       socket.off('room:closed', onClosed)
+      socket.off('player:kicked', onKicked)
     }
   }, [tryReconnect])
 
@@ -507,6 +531,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setQuestionCount(res.questionCount || 0)
       setPlayers(res.players || [])
       setPhase('lobby')
+      setLocked(false)
       setCurrentPlayerId(null)
       setMyAnswer(null)
       setRoundStats(null)
@@ -523,12 +548,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       title?: string
       languages?: { code: string; label: string }[]
       defaultLanguage?: string
+      locked?: boolean
     }>('room:preview', { pin: pinInput })
     if (!res.ok) throw new Error(res.message || '房间不存在')
     return {
       title: res.title || '',
       languages: res.languages?.length ? res.languages : [{ code: 'zh', label: '中文' }],
       defaultLanguage: res.defaultLanguage || res.languages?.[0]?.code || 'zh',
+      locked: Boolean(res.locked),
     }
   }, [])
 
@@ -583,6 +610,37 @@ export function GameProvider({ children }: { children: ReactNode }) {
     [myAnswer],
   )
 
+  const kickPlayer = useCallback(
+    async (playerId: string) => {
+      if (!user?.token || !pin) throw new Error('无法踢人')
+      const res = await emitAck<{ ok: boolean; message?: string }>('host:kickPlayer', {
+        token: user.token,
+        pin,
+        playerId,
+      })
+      if (!res.ok) throw new Error(res.message || '踢人失败')
+    },
+    [pin, user],
+  )
+
+  const setRoomLocked = useCallback(
+    async (nextLocked: boolean) => {
+      if (!user?.token || !pin) throw new Error('无法改锁定')
+      const res = await emitAck<{ ok: boolean; message?: string; locked?: boolean }>(
+        'host:setLocked',
+        {
+          token: user.token,
+          pin,
+          locked: nextLocked,
+        },
+      )
+      if (!res.ok) throw new Error(res.message || '锁定失败')
+      if (typeof res.locked === 'boolean') setLocked(res.locked)
+      else setLocked(nextLocked)
+    },
+    [pin, user],
+  )
+
   const backToLobby = useCallback(async () => {
     if (!user?.token || !pin) return
     const res = await emitAck<{ ok: boolean; message?: string }>('host:backToLobby', {
@@ -605,6 +663,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setPlayers([])
     setCurrentPlayerId(null)
     setPhase('idle')
+    setLocked(false)
     setQuestionMeta(null)
     setMyAnswer(null)
     setCorrectIndex(null)
@@ -647,6 +706,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     players,
     currentPlayerId,
     phase,
+    locked,
     currentQuestionIndex,
     timeLeft,
     introProgress,
@@ -674,6 +734,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     startGame,
     nextQuestion,
     submitAnswer,
+    kickPlayer,
+    setRoomLocked,
     backToLobby,
     goHome,
   }

@@ -110,6 +110,34 @@ export function registerSocketHandlers(io: Server, rooms: RoomManager) {
       ack?.({ ok: true })
     })
 
+    socket.on('host:kickPlayer', (payload, ack) => {
+      const token = String(payload?.token ?? '')
+      const pin = String(payload?.pin ?? '')
+      const playerId = String(payload?.playerId ?? '')
+      const user = verifyToken(token)
+      if (!user) {
+        ack?.({ ok: false, message: '请先登录' })
+        return
+      }
+      if (!playerId) {
+        ack?.({ ok: false, message: '缺少玩家' })
+        return
+      }
+      ack?.(rooms.kickPlayer(pin, user.id, playerId))
+    })
+
+    socket.on('host:setLocked', (payload, ack) => {
+      const token = String(payload?.token ?? '')
+      const pin = String(payload?.pin ?? '')
+      const locked = Boolean(payload?.locked)
+      const user = verifyToken(token)
+      if (!user) {
+        ack?.({ ok: false, message: '请先登录' })
+        return
+      }
+      ack?.(rooms.setLocked(pin, user.id, locked))
+    })
+
     socket.on('room:preview', (payload, ack) => {
       const pin = String(payload?.pin ?? '').trim()
       if (!/^\d{6}$/.test(pin)) {
@@ -123,6 +151,14 @@ export function registerSocketHandlers(io: Server, rooms: RoomManager) {
       }
       if ('closed' in preview && preview.closed) {
         ack?.({ ok: false, message: '游戏已开始，无法加入' })
+        return
+      }
+      if ('locked' in preview && preview.locked) {
+        ack?.({
+          ok: true,
+          ...preview,
+          message: '房间已锁定，暂时无法加入',
+        })
         return
       }
       ack?.({ ok: true, ...preview })

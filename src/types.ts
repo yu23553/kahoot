@@ -16,6 +16,8 @@ export type Question = {
   id: string
   type: QuestionType
   timeLimit: number
+  /** 本题满分，默认 1000 */
+  points: number
   correctIndex?: number
   locales: Record<string, QuestionLocale>
 }

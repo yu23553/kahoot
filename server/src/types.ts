@@ -17,6 +17,8 @@ export type Question = {
   id: string
   type: QuestionType
   timeLimit: number
+  /** 本题满分（速度加成在此基础上缩放，默认 1000） */
+  points: number
   /** 选择/判断正确答案下标（各语言共用） */
   correctIndex?: number
   /** 按语言 code 存储文案；至少包含测验的每一种语言 */
@@ -105,6 +107,8 @@ export type Room = {
   hostSocketId: string | null
   quiz: Quiz
   players: Map<string, Player>
+  /** 锁定后大厅不允许新玩家加入 */
+  locked: boolean
   phase: RoomPhase
   currentQuestionIndex: number
   introEndsAt: number
@@ -152,6 +156,9 @@ export const INTRO_DURATION_MS = 5000
 export const LOBBY_IDLE_MS = 45 * 60 * 1000
 export const FINISHED_IDLE_MS = 20 * 60 * 1000
 export const IN_GAME_IDLE_MS = 3 * 60 * 60 * 1000
+export const DEFAULT_QUESTION_POINTS = 1000
+export const MIN_QUESTION_POINTS = 100
+export const MAX_QUESTION_POINTS = 5000
 
 export const PRESET_LANGUAGES: QuizLanguage[] = [
   { code: 'zh', label: '中文' },
