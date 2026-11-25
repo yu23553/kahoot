@@ -25,6 +25,46 @@ jobs:
           npm ci
           npm ci --prefix server
 
+      # Account-level workers.dev subdomain (once). Non-interactive: Wrangler
+      # cannot prompt in CI. Uses GitHub Secrets only — never prints token values.
+      - name: Ensure workers.dev subdomain
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Prefer repo owner login; fallback candidates if taken.
+          SUBDOMAIN_CANDIDATES: yu23553 yu23553-kahoot kahoot-yu23553
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID missing"
+            exit 1
+          fi
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain"
+          AUTH=( -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json" )
+
+          # Already registered?
+          EXISTING="$(curl -sS "${AUTH[@]}" "$API" || true)"
+          if echo "$EXISTING" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+            NAME="$(echo "$EXISTING" | sed -n 's/.*"subdomain"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+            echo "workers.dev subdomain already registered: ${NAME}.workers.dev"
+            exit 0
+          fi
+
+          for CANDIDATE in $SUBDOMAIN_CANDIDATES; do
+            echo "Trying to register workers.dev subdomain: ${CANDIDATE}"
+            RESP="$(curl -sS -X PUT "${AUTH[@]}" "$API" \
+              --data "{\"subdomain\":\"${CANDIDATE}\"}" || true)"
+            if echo "$RESP" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+              echo "Registered workers.dev subdomain: ${CANDIDATE}.workers.dev"
+              exit 0
+            fi
+            # Do not dump full API body (may echo request context); show success=false only.
+            echo "Candidate ${CANDIDATE} failed (success=false or HTTP error); trying next…"
+          done
+
+          echo "::error::Could not register a workers.dev subdomain via API. Register once in Dashboard: https://dash.cloudflare.com/${CLOUDFLARE_ACCOUNT_ID}/workers/onboarding"
+          exit 1
+
       - name: Deploy with Wrangler
         uses: cloudflare/wrangler-action@v3
         with:
