@@ -15,9 +15,12 @@
     "preview": "vite preview",
     "start": "npm run start --prefix server",
     "start:server": "npm run start --prefix server",
-    "render:build": "npm install && npm install --prefix server && npm run build"
+    "render:build": "npm install && npm install --prefix server && npm run build",
+    "cf:deploy": "wrangler deploy",
+    "cf:whoami": "wrangler whoami"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "concurrently": "^10.0.5",
     "localtunnel": "^2.0.2",
     "lucide-react": "^1.42.0",
@@ -36,6 +39,7 @@
     "oxlint": "^1.79.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "wrangler": "^4.168.0"
   }
 }

@@ -1,4 +1,4 @@
-# 可选：本地 Docker 构建验证。Render 默认用原生 Node runtime + render.yaml。
+# Cloudflare Containers + optional local/Render Docker runs.
 FROM node:22-alpine
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN npm run build
 
 ENV NODE_ENV=production
 ENV CLOUD_HOSTED=true
-ENV PORT=10000
-EXPOSE 10000
+ENV PORT=8080
+EXPOSE 8080
 
 CMD ["npm", "start"]
