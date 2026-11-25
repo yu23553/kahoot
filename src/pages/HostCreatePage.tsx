@@ -58,13 +58,20 @@ function hydrateDraft(raw: {
             id: q.id,
             type: q.type || 'choice',
             timeLimit: q.timeLimit,
+            points: Number.isFinite(q.points) ? q.points : 1000,
             correctIndex: q.correctIndex,
             locales,
           },
           languages,
         )
       }
-      return ensureQuestionLocales(q, languages)
+      return ensureQuestionLocales(
+        {
+          ...q,
+          points: Number.isFinite(q.points) ? q.points : 1000,
+        },
+        languages,
+      )
     }),
   }
 }
@@ -610,19 +617,38 @@ export default function HostCreatePage() {
                   </div>
                 )}
 
-                <label className="flex flex-wrap items-center gap-2 text-sm font-bold">
-                  {t('create.timeLimit')}
-                  <input
-                    type="number"
-                    min={5}
-                    max={120}
-                    value={q.timeLimit}
-                    onChange={(e) =>
-                      updateQuestion(qi, { timeLimit: Number(e.target.value) || 20 })
-                    }
-                    className="w-24 rounded-lg border-2 border-kahoot-purple/15 px-3 py-2 outline-none focus:border-kahoot-purple"
-                  />
-                </label>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex flex-wrap items-center gap-2 text-sm font-bold">
+                    {t('create.timeLimit')}
+                    <input
+                      type="number"
+                      min={5}
+                      max={120}
+                      value={q.timeLimit}
+                      onChange={(e) =>
+                        updateQuestion(qi, { timeLimit: Number(e.target.value) || 20 })
+                      }
+                      className="w-24 rounded-lg border-2 border-kahoot-purple/15 px-3 py-2 outline-none focus:border-kahoot-purple"
+                    />
+                  </label>
+                  <label className="flex flex-wrap items-center gap-2 text-sm font-bold">
+                    {t('create.points')}
+                    <input
+                      type="number"
+                      min={100}
+                      max={5000}
+                      step={50}
+                      value={q.points ?? 1000}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateQuestion(qi, {
+                          points: Number.isFinite(n) ? Math.round(n) : 1000,
+                        })
+                      }}
+                      className="w-28 rounded-lg border-2 border-kahoot-purple/15 px-3 py-2 outline-none focus:border-kahoot-purple"
+                    />
+                  </label>
+                </div>
               </article>
             )
           })}

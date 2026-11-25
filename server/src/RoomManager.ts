@@ -4,6 +4,7 @@ import {
   fillSimilarity,
   isAnswerCorrect,
   normalizeQuestion,
+  questionPoints,
   quizDefaultLanguage,
   quizLanguages,
   resolveLocale,
@@ -32,10 +33,15 @@ import {
 
 const AVATAR_COLORS = ['#e21b3c', '#1368ce', '#d89e00', '#26890c', '#c039f3', '#ff6b35', '#00c2a8']
 
-function calcScore(correct: boolean, elapsedMs: number, timeLimitSec: number) {
+function calcScore(
+  correct: boolean,
+  elapsedMs: number,
+  timeLimitSec: number,
+  maxPoints: number,
+) {
   if (!correct) return 0
   const ratio = Math.min(1, Math.max(0, elapsedMs / (timeLimitSec * 1000)))
-  return Math.round(1000 * (1 - ratio / 2))
+  return Math.round(maxPoints * (1 - ratio / 2))
 }
 
 function generatePin(existing: Set<string>) {
@@ -115,6 +121,7 @@ export class RoomManager {
       hostSocketId,
       quiz: normalizedQuiz,
       players: new Map(),
+      locked: false,
       phase: 'lobby',
       currentQuestionIndex: 0,
       introEndsAt: 0,
@@ -160,6 +167,7 @@ export class RoomManager {
     const room = this.rooms.get(pin)
     if (!room) return { ok: false as const, message: '房间不存在' }
     if (room.phase !== 'lobby') return { ok: false as const, message: '游戏已开始，无法加入' }
+    if (room.locked) return { ok: false as const, message: '房间已锁定，无法加入' }
     if (room.players.size >= MAX_ROOM_PLAYERS) {
       return { ok: false as const, message: `房间已满（最多 ${MAX_ROOM_PLAYERS} 人）` }
     }
@@ -234,6 +242,46 @@ export class RoomManager {
       if (player) player.socketId = ''
       touch(room)
     }
+  }
+
+  kickPlayer(pin: string, hostId: string, playerId: string) {
+    const room = this.rooms.get(pin)
+    if (!room || room.hostId !== hostId) {
+      return { ok: false as const, message: '无权限' }
+    }
+    if (room.phase !== 'lobby') {
+      return { ok: false as const, message: '仅大厅可踢人' }
+    }
+    const player = room.players.get(playerId)
+    if (!player) return { ok: false as const, message: '玩家不存在' }
+
+    const kickedSocketId = player.socketId
+    room.players.delete(playerId)
+    if (kickedSocketId) {
+      this.playerSocketIndex.delete(kickedSocketId)
+      this.io.to(kickedSocketId).emit('player:kicked', {
+        reason: '你已被主持人移出房间',
+      })
+      const kickedSocket = this.io.sockets.sockets.get(kickedSocketId)
+      if (kickedSocket) void kickedSocket.leave(`room:${pin}`)
+    }
+    touch(room)
+    this.broadcastLobby(room)
+    return { ok: true as const }
+  }
+
+  setLocked(pin: string, hostId: string, locked: boolean) {
+    const room = this.rooms.get(pin)
+    if (!room || room.hostId !== hostId) {
+      return { ok: false as const, message: '无权限' }
+    }
+    if (room.phase !== 'lobby' && room.phase !== 'finished') {
+      return { ok: false as const, message: '当前无法改锁定状态' }
+    }
+    room.locked = Boolean(locked)
+    touch(room)
+    this.broadcastLobby(room)
+    return { ok: true as const, locked: room.locked }
   }
 
   startGame(pin: string, hostId: string) {
@@ -399,6 +447,7 @@ export class RoomManager {
         fillBucket.set(key, prev)
       }
 
+      const maxPoints = questionPoints(q)
       let gained = 0
       let correct = false
       if (q.type === 'fill') {
@@ -407,10 +456,20 @@ export class RoomManager {
           ans?.similarity ??
           fillSimilarity(String(ans?.text ?? ''), loc.acceptAnswers ?? [])
         correct = isAnswerCorrect(q, ans, player.language, fallback)
-        gained = calcFillScore(sim, ans?.elapsedMs ?? q.timeLimit * 1000, q.timeLimit)
+        gained = calcFillScore(
+          sim,
+          ans?.elapsedMs ?? q.timeLimit * 1000,
+          q.timeLimit,
+          maxPoints,
+        )
       } else {
         correct = isAnswerCorrect(q, ans, player.language, fallback)
-        gained = calcScore(correct, ans?.elapsedMs ?? q.timeLimit * 1000, q.timeLimit)
+        gained = calcScore(
+          correct,
+          ans?.elapsedMs ?? q.timeLimit * 1000,
+          q.timeLimit,
+          maxPoints,
+        )
       }
 
       if (correct) correctCount += 1
@@ -489,6 +548,7 @@ export class RoomManager {
       phase: room.phase as RoomPhase,
       players: toPublicPlayers(room),
       maxPlayers: MAX_ROOM_PLAYERS,
+      locked: room.locked,
       languages: quizLanguages(room.quiz),
       defaultLanguage: quizDefaultLanguage(room.quiz),
     })
@@ -508,6 +568,7 @@ export class RoomManager {
       questionCount: room.quiz.questions.length,
       playerCount: room.players.size,
       maxPlayers: MAX_ROOM_PLAYERS,
+      locked: room.locked,
       languages: quizLanguages(room.quiz),
       defaultLanguage: quizDefaultLanguage(room.quiz),
       phase: room.phase,
@@ -525,6 +586,7 @@ export class RoomManager {
       players: toPublicPlayers(room),
       currentQuestionIndex: room.currentQuestionIndex,
       maxPlayers: MAX_ROOM_PLAYERS,
+      locked: room.locked,
       languages: quizLanguages(room.quiz),
       defaultLanguage: quizDefaultLanguage(room.quiz),
       myLanguage: language,

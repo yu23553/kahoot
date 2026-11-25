@@ -11,13 +11,14 @@ export default function HomePage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { user } = useAuth()
-  const { joinGame, previewRoom, connected } = useGame()
+  const { joinGame, previewRoom, connected, error: gameError } = useGame()
   const { t } = useUiLanguage()
   const [pin, setPin] = useState(() => (params.get('pin') || '').replace(/\D/g, '').slice(0, 6))
   const [nickname, setNickname] = useState('')
   const [languages, setLanguages] = useState<QuizLanguage[]>([])
   const [language, setLanguage] = useState('')
   const [quizTitle, setQuizTitle] = useState('')
+  const [roomLocked, setRoomLocked] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [previewing, setPreviewing] = useState(false)
@@ -33,6 +34,7 @@ export default function HomePage() {
     if (!/^\d{6}$/.test(pin) || !connected) {
       setLanguages([])
       setQuizTitle('')
+      setRoomLocked(false)
       return
     }
     let alive = true
@@ -42,15 +44,17 @@ export default function HomePage() {
         if (!alive) return
         setLanguages(info.languages)
         setQuizTitle(info.title)
+        setRoomLocked(Boolean(info.locked))
         setLanguage((prev) =>
           info.languages.some((l) => l.code === prev) ? prev : info.defaultLanguage,
         )
-        setError('')
+        setError(info.locked ? t('home.roomLocked') : '')
       })
       .catch((err) => {
         if (!alive) return
         setLanguages([])
         setQuizTitle('')
+        setRoomLocked(false)
         setError(err instanceof Error ? err.message : t('home.roomReadFailed'))
       })
       .finally(() => {
@@ -63,6 +67,10 @@ export default function HomePage() {
 
   const onJoin = async (e: FormEvent) => {
     e.preventDefault()
+    if (roomLocked) {
+      setError(t('home.roomLocked'))
+      return
+    }
     if (languages.length > 1 && !language) {
       setError(t('home.needQuizLang'))
       return
@@ -140,10 +148,16 @@ export default function HomePage() {
               </div>
             </div>
           )}
-          {error && <p className="text-center text-sm font-bold text-answer-red">{error}</p>}
+          {(error || gameError) && (
+            <p className="text-center text-sm font-bold text-answer-red">
+              {error || gameError}
+            </p>
+          )}
           <button
             type="submit"
-            disabled={loading || !connected || (languages.length > 1 && !language)}
+            disabled={
+              loading || !connected || roomLocked || (languages.length > 1 && !language)
+            }
             className="w-full rounded-xl bg-kahoot-purple py-3 font-black text-white transition hover:bg-kahoot-purple-light active:scale-[0.98] disabled:opacity-60"
           >
             {loading ? t('home.joining') : t('home.join')}

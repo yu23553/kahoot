@@ -35,6 +35,7 @@ export function createEmptyQuestion(
     id: createId('q'),
     type,
     timeLimit: type === 'fill' ? 30 : type === 'order' ? 40 : type === 'truefalse' ? 15 : 20,
+    points: 1000,
     locales,
   }
   if (type === 'choice' || type === 'truefalse') {
@@ -63,6 +64,7 @@ export function ensureQuestionLocales(
     id: q.id,
     type,
     timeLimit: q.timeLimit,
+    points: Number.isFinite(q.points) ? q.points : 1000,
     locales,
   }
   if (type === 'choice' || type === 'truefalse') {
@@ -80,6 +82,7 @@ export const DEFAULT_QUIZ: QuizDraft = {
       id: 'q1',
       type: 'choice',
       timeLimit: 20,
+      points: 1000,
       correctIndex: 1,
       locales: {
         zh: {
@@ -92,6 +95,7 @@ export const DEFAULT_QUIZ: QuizDraft = {
       id: 'q2',
       type: 'truefalse',
       timeLimit: 12,
+      points: 500,
       correctIndex: 0,
       locales: {
         zh: {
@@ -104,6 +108,7 @@ export const DEFAULT_QUIZ: QuizDraft = {
       id: 'q3',
       type: 'fill',
       timeLimit: 25,
+      points: 1500,
       locales: {
         zh: {
           text: 'HTML 中用来创建超链接的标签名是？（填写标签名，如 a）',
@@ -115,6 +120,7 @@ export const DEFAULT_QUIZ: QuizDraft = {
       id: 'q4',
       type: 'order',
       timeLimit: 35,
+      points: 2000,
       locales: {
         zh: {
           text: '将一周按从周一到周四的顺序排列：',

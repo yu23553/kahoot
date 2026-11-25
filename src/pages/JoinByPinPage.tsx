@@ -15,6 +15,7 @@ export default function JoinByPinPage() {
   const [languages, setLanguages] = useState<QuizLanguage[]>([])
   const [language, setLanguage] = useState('')
   const [quizTitle, setQuizTitle] = useState('')
+  const [roomLocked, setRoomLocked] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -27,10 +28,12 @@ export default function JoinByPinPage() {
         setLanguages(info.languages)
         setQuizTitle(info.title)
         setLanguage(info.defaultLanguage)
-        setError('')
+        setRoomLocked(Boolean(info.locked))
+        setError(info.locked ? t('home.roomLocked') : '')
       })
       .catch((err) => {
         if (!alive) return
+        setRoomLocked(false)
         setError(err instanceof Error ? err.message : t('home.roomReadFailed'))
       })
     return () => {
@@ -42,6 +45,10 @@ export default function JoinByPinPage() {
     e.preventDefault()
     if (!/^\d{6}$/.test(pin)) {
       setError(t('join.invalidPin'))
+      return
+    }
+    if (roomLocked) {
+      setError(t('home.roomLocked'))
       return
     }
     if (languages.length > 1 && !language) {
@@ -107,7 +114,11 @@ export default function JoinByPinPage() {
             <button
               type="submit"
               disabled={
-                loading || !connected || !/^\d{6}$/.test(pin) || (languages.length > 1 && !language)
+                loading ||
+                !connected ||
+                roomLocked ||
+                !/^\d{6}$/.test(pin) ||
+                (languages.length > 1 && !language)
               }
               className="w-full rounded-xl bg-[#07c160] py-3 font-black text-white disabled:opacity-60"
             >
